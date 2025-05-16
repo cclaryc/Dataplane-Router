@@ -1,0 +1,64 @@
+# Tema 1 PCOM - Dataplane Router - Braviceanu Badea Clarisse 322CB
+
+------------------------------------------------
+## Cerinte rezoltate:
+- Procesul de dirijare
+- Longest Prefix Matching eficient
+- Protocolul ICMP
+
+## Logica principală 
+
+Bucata centrală de cod este o buclă infinită care prelucrează fiecare pachet primit:
+
+```c
+while (1) {
+    1. Primire pachet
+
+    2. Verificare Ethernet:
+       - MAC destinație corespunde routerului?
+       - Tipul este IPv4?
+
+    3. Verificare IP:
+       - Checksum corect?
+       - TTL > 1?
+
+    4. Căutare rută:
+       - Dacă nu există rută -> trimitem ICMP Destination Unreachable
+
+    5. Verificare dacă pachetul e pentru router:
+       - Dacă este un ICMP Echo Request -> trimitem Echo Reply
+
+    6. Forwardare:
+       - Decrementare TTL
+       - Recalcul checksum IP
+       - Determinare next-hop din ruta
+       - Căutare MAC next-hop din tabelă ARP
+       - Rescriere antet Ethernet
+       - Trimitere pe interfața corespunzătoare
+}
+```
+
+---
+
+### Verificare Ethernet
+Primul filtru e rapid și elimină pachetele irelevante fără să le mai parsezi complet. Evităm procesarea inutilă a pachetelor multicast/unicast neadresate routerului.
+
+### Verificare IP
+Validarea checksumului și a TTL-ului elimină pachetele corupte sau expirate. TTL-ul este tratat devreme pentru a răspunde imediat cu ICMP Time Exceeded.
+
+### Căutare rută înainte de Echo?
+Chiar dacă routerul e destinatarul pachetului, logica de rutare statică decide dacă știm sau nu ce să facem cu el. Dacă nu știm, trimitem ICMP Unreachable chiar înainte de orice altă procesare.
+
+### Tratare ICMP separat
+Răspunsul la Echo Request este o funcționalitate de bază pentru diagnosticare (`ping`). Oferim o cale clară de răspuns care reutilizează bufferul și inversează adresele IP și MAC.
+
+### Forwardare la final
+Forwardarea e făcută **doar dacă pachetul nu e pentru noi**, are TTL valid și o rută. Orice eșec în aceste condiții generează ICMP corespunzător.
+
+---
+
+## Design decizii și simplitate
+
+- **Tabelă ARP și rutare statică**: Evităm complexitatea ARP dinamic și focusăm pe logica routerului.
+- **LPM simplificat**: Tabela de rutare e sortată descrescător după lungimea prefixului; căutarea e liniară, dar extrem de clară.
+- **ICMP într-o singură funcție**: `send_icmp_packet` gestionează atât erori, cât și echo replies, pentru a evita duplicarea logicii.
